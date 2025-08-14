@@ -60,11 +60,11 @@ bookkeeper/
 # Docker
 .dockerignore
 
-# Certificates (keep structure but ignore actual certs)
-final-cert/*.crt
-final-cert/*.key
-final-cert/*.csr
-final-cert/*.p12
+# # Certificates (keep structure but ignore actual certs)
+# final-cert/*.crt
+# final-cert/*.key
+# final-cert/*.csr
+# final-cert/*.p12
 
 # Temporary files
 *.tmp
