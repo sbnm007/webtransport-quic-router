@@ -1,0 +1,190 @@
+# --- ConfigMap for Router Configuration ---
+# This ConfigMap holds the router_config.yaml content.
+# The router will load its dynamic service routing rules from here,
+# enabling hot-reload of service configurations.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: router-config
+data:
+  # The key 'router_config.yaml' matches the filename expected by the router.
+  # This file will be mounted into the container at /config/router_config.yaml.
+  router_config.yaml: |
+    # WebTransport Router Configuration
+    # This file supports hot-reload - changes will be automatically detected
+
+    global:
+      default_timeout: 30
+      connect_timeout: 5
+      log_level: INFO
+
+    services:
+      # --- IMPORTANT: Update 'host' values for services running in K8s ---
+      # For microservices deployed within Kubernetes, replace 'localhost' or
+      # 'host.minikube.internal' with their Kubernetes Service Names.
+      # Example: 'video' microservice exposed by 'microservice-video-service'.
+
+      video:
+        name: video
+        host: microservice-video-service # Update this to your K8s Service Name
+        port: 4434
+        endpoint: /process_video
+        content_type: application/octet-stream
+        timeout: 10
+        retries: 2
+        data_format: binary
+        enabled: true
+        custom_headers:
+          X-Service-Version: "1.0"
+          X-Video-Quality: "hd"
+
+      audio:
+        name: audio
+        host: microservice-audio-service # Update this to your K8s Service Name
+        port: 4435
+        endpoint: /process_audio
+        content_type: application/octet-stream
+        timeout: 5
+        retries: 3
+        data_format: binary
+        enabled: true
+        custom_headers:
+          X-Service-Version: "1.0"
+          X-Audio-Codec: "opus"
+
+      chat:
+        name: chat
+        host: microservice-chat-service # Update this to your K8s Service Name
+        port: 4436
+        endpoint: /process_chat
+        content_type: application/json
+        timeout: 3
+        retries: 1
+        data_format: json
+        enabled: true
+        custom_headers:
+          X-Service-Version: "1.0"
+          X-Chat-Mode: "realtime"
+
+      # --- Other services (examples) ---
+      # For services not managed by Kubernetes (e.g., running on your host machine
+      # or external services), you might use 'host.minikube.internal' or their external IP.
+      screen:
+        name: screen
+        host: host.minikube.internal # Example: if screen service runs on your host
+        port: 4437
+        endpoint: /process_screen
+        content_type: application/octet-stream
+        timeout: 8
+        retries: 2
+        data_format: binary
+        enabled: false
+        custom_headers:
+          X-Service-Version: "1.0"
+          X-Screen-Mode: "shared"
+
+      analytics:
+        name: analytics
+        host: analytics-server-service # Example: if analytics is another K8s service
+        port: 9090
+        endpoint: /track_event
+        content_type: application/json
+        timeout: 2
+        retries: 1
+        data_format: json
+        enabled: false
+        custom_headers:
+          X-Service-Version: "2.0"
+          X-Analytics-Type: "stream"
+
+---
+
+# --- Deployment for WebTransport Router ---
+# This Deployment manages the router application pods, ensuring desired replica count
+# and automatic restarts in case of failures.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: webtransport-router-deployment
+  labels:
+    app: webtransport-router
+spec:
+  replicas: 1 # Adjust replica count for high availability/load balancing
+  selector:
+    matchLabels:
+      app: webtransport-router
+  template:
+    metadata:
+      labels:
+        app: webtransport-router
+    spec:
+      containers:
+        - name: router
+          image: sbnm007/quic_router:0.0.2 # Replace with your built Docker image
+          # Define the command and arguments to run the router application.
+          # This overrides any CMD instruction in the Dockerfile.
+          command: ["python"]
+          args: ["router.py"]
+          ports:
+            - containerPort: 4433 # Internal container port for QUIC/HTTP/3 (TCP fallback)
+              name: quic-h3-tcp
+              protocol: TCP
+            - containerPort: 4433 # Internal container port for QUIC (UDP)
+              name: quic-h3-udp
+              protocol: UDP
+          volumeMounts:
+            # Mount the router_config.yaml from the 'router-config' ConfigMap.
+            # It will appear as a file at /config/router_config.yaml inside the container.
+            - name: router-config-volume
+              mountPath: /config/router_config.yaml
+              subPath: router_config.yaml
+            # Mount the TLS certificates from the existing 'quic-cert' Secret.
+            # The 'tls.crt' and 'tls.key' from the secret are mapped to 'new-quic.crt'
+            # and 'new-quic.key' respectively, at /certs/ inside the container.
+            - name: router-certs-volume
+              mountPath: /certs/ # Mount the entire secret as a directory
+          env: # Define environment variables for router.py to find the mounted files
+            - name: CERT_PATH
+              value: /certs/new-quic.crt # CORRECTED: Use the actual mounted filename
+            - name: KEY_PATH
+              value: /certs/new-quic.key # CORRECTED: Use the actual mounted filename
+            - name: CONFIG_PATH
+              value: /config/router_config.yaml
+      volumes:
+        - name: router-config-volume
+          configMap:
+            name: router-config # Refers to the ConfigMap defined above
+        - name: router-certs-volume
+          secret:
+            secretName: quic-cert # Reusing your existing 'quic-cert' Secret
+            items: # Explicitly map secret keys to desired filenames in the volume
+              - key: tls.crt
+                path: new-quic.crt # This means the file will be /certs/new-quic.crt
+              - key: tls.key
+                path: new-quic.key # This means the file will be /certs/new-quic.key
+
+---
+
+# --- Service for WebTransquicport Router ---
+# This Service exposes the router application.
+# - 'LoadBalancer' type is used to expose it externally (e.g., Minikube will provide a host port).
+# - 'ClusterIP' can be used if access is only needed from within the cluster.
+apiVersion: v1
+kind: Service
+metadata:
+  name: webtransport-router-service
+spec:
+  selector:
+    app: webtransport-router # Selects pods managed by the router deployment
+  ports:
+    - name: https-quic-tcp # Service port for HTTP/3 over TCP fallback
+      protocol: TCP
+      port: 443 # External port clients will connect to
+      targetPort: 4433 # Internal container port
+    - name: https-quic-udp # Service port for QUIC (HTTP/3) over UDP
+      protocol: UDP
+      port: 443 # External port clients will connect to
+      targetPort: 4433 # Internal container port
+  type: LoadBalancer # Use LoadBalancer for external access (Minikube maps to host port)
+  # For bare metal with MetalLB, LoadBalancer will acquire an external IP.
+  # If you only need internal access, use 'ClusterIP'.

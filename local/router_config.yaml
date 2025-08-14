@@ -1,0 +1,177 @@
+# WebTransport Router Configuration
+# This file supports hot-reload - changes will be automatically detected
+
+global:
+  default_timeout: 30
+  connect_timeout: 5
+  log_level: INFO
+
+services:
+  # Existing services
+  video:
+    name: video
+    host: localhost
+    port: 4434
+    endpoint: /process_video
+    content_type: application/octet-stream
+    timeout: 10
+    retries: 2
+    data_format: binary
+    enabled: true
+    custom_headers:
+      X-Service-Version: "1.0"
+      X-Video-Quality: "hd"
+
+  audio:
+    name: audio
+    host: localhost
+    port: 4435
+    endpoint: /process_audio
+    content_type: application/octet-stream
+    timeout: 5
+    retries: 3
+    data_format: binary
+    enabled: true
+    custom_headers:
+      X-Service-Version: "1.0"
+      X-Audio-Codec: "opus"
+
+  chat:
+    name: chat
+    host: localhost
+    port: 4436
+    endpoint: /process_chat
+    content_type: application/json
+    timeout: 3
+    retries: 1
+    data_format: json
+    enabled: true
+    custom_headers:
+      X-Service-Version: "1.0"
+      X-Chat-Mode: "realtime"
+
+  # NEW SERVICES - Just add them here and they work automatically!
+  
+  screen:
+    name: screen
+    host: localhost
+    port: 4437
+    endpoint: /process_screen
+    content_type: application/octet-stream
+    timeout: 8
+    retries: 2
+    data_format: binary
+    enabled: true  # Set to true to enable  
+    custom_headers:
+      X-Service-Version: "1.0"
+      X-Screen-Mode: "shared"
+
+  file:
+    name: file
+    host: localhost
+    port: 4438
+    endpoint: /process_file
+    content_type: application/octet-stream
+    timeout: 30
+    retries: 1
+    data_format: binary
+    enabled: false  # Set to true to enable
+    custom_headers:
+      X-Service-Version: "1.0"
+      X-File-Mode: "streaming"
+
+  # Example: Analytics service
+  analytics:
+    name: analytics
+    host: analytics-server
+    port: 9090
+    endpoint: /track_event
+    content_type: application/json
+    timeout: 2
+    retries: 1
+    data_format: json
+    enabled: false  # Disabled by default
+    custom_headers:
+      X-Service-Version: "2.0"
+      X-Analytics-Type: "stream"
+
+  # Example: Security/Moderation service
+  moderation:
+    name: moderation
+    host: moderation-service
+    port: 5000
+    endpoint: /check_content
+    content_type: application/octet-stream
+    timeout: 5
+    retries: 2
+    data_format: binary
+    enabled: false  # Disabled by default
+    custom_headers:
+      X-Service-Version: "1.0"
+      X-Moderation-Level: "strict"
+
+  # Example: Recording service
+  recording:
+    name: recording
+    host: recorder
+    port: 8080
+    endpoint: /record_stream
+    content_type: application/octet-stream
+    timeout: 15
+    retries: 1
+    data_format: binary
+    enabled: false  # Disabled by default
+    custom_headers:
+      X-Service-Version: "1.0"
+      X-Recording-Quality: "high"
+
+  # Example: Transcription service (for audio)
+  transcription:
+    name: transcription
+    host: transcription-ai
+    port: 7000
+    endpoint: /transcribe
+    content_type: application/octet-stream
+    timeout: 10
+    retries: 2
+    data_format: binary
+    enabled: false  # Only enable if you have audio streams
+    custom_headers:
+      X-Service-Version: "1.0"
+      X-Language: "en"
+
+  # Example: Thumbnail generation (for video)
+  thumbnail:
+    name: thumbnail
+    host: thumbnail-generator
+    port: 6000
+    endpoint: /generate_thumbnail
+    content_type: application/octet-stream
+    timeout: 8
+    retries: 1
+    data_format: binary
+    enabled: false  # Only enable if you have video streams
+    custom_headers:
+      X-Service-Version: "1.0"
+      X-Thumbnail-Size: "medium"
+
+# Configuration field explanations:
+# 
+# name: Human-readable name for the service
+# host: Hostname or IP address of the service
+# port: Port number the service is listening on
+# endpoint: API endpoint path (e.g., /process_video)
+# content_type: MIME type for the request
+# timeout: Request timeout in seconds
+# retries: Number of retry attempts on failure
+# data_format: 'binary' for raw bytes, 'json' for JSON payload
+# enabled: true/false to enable/disable the service
+# custom_headers: Additional headers to send with requests
+#
+# To add a new service:
+# 1. Add a new entry under 'services'
+# 2. Configure the connection details
+# 3. Set enabled: true
+# 4. The router will automatically detect and use it!
+# 
+# Hot-reload: Save this file and changes take effect immediately

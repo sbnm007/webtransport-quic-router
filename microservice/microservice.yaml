@@ -1,0 +1,192 @@
+# --- ConfigMap for Shared Application Configuration (for Microservices) ---
+# This ConfigMap holds the microservice_config.yaml content, which will be
+# mounted as a file into each microservice pod. The microservice will
+# hot-reload its settings from this file.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: microservice-app-config
+data:
+  # The key 'microservice_config.yaml' matches the filename we'll mount.
+  microservice_config.yaml: |
+    # Microservice-specific configuration
+    # CORRECTED: Pointed to the correct internal service name for the broker.
+    pulsar_broker_url: "pulsar://10.100.48.76:6650"
+    send_to_pulsar: true 
+
+---
+
+# --- Deployment for Video Microservice ---
+# Manages the 'video' microservice pods.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: microservice-video-deployment
+  labels:
+    app: video
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: video
+  template:
+    metadata:
+      labels:
+        type: microservice
+        app: video
+    spec:
+      containers:
+        - name: video-server
+          image: sbnm007/microservice:0.0.6 # Ensure this is your rebuilt image
+          command: ["python"]
+          args:
+            - "microservice.py"
+            - "video"
+            - "4434"
+          ports:
+            - containerPort: 4434
+              protocol: TCP
+          volumeMounts:
+            # Mount the microservice_config.yaml from the ConfigMap
+            # It will appear as a file at /config/microservice_config.yaml inside the container.
+            - name: microservice-config-volume
+              mountPath: /config
+          env: # Pass the path to the config file as an environment variable
+            - name: MICROSERVICE_CONFIG_PATH
+              value: /config/microservice_config.yaml
+      volumes:
+        - name: microservice-config-volume
+          configMap:
+            name: microservice-app-config # Refers to the ConfigMap defined above
+
+---
+
+# --- Service for Video Microservice ---
+apiVersion: v1
+kind: Service
+metadata:
+  name: microservice-video-service
+spec:
+  selector:
+    app: video
+  ports:
+    - protocol: TCP
+      port: 4434
+      targetPort: 4434
+  type: ClusterIP
+
+---
+
+# --- Deployment for Audio Microservice ---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: microservice-audio-deployment
+  labels:
+    app: audio
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: audio
+  template:
+    metadata:
+      labels:
+        type: microservice
+        app: audio
+    spec:
+      containers:
+        - name: audio-server
+          image: sbnm007/microservice:0.0.6 # Ensure this is your rebuilt image
+          command: ["python"]
+          args:
+            - "microservice.py"
+            - "audio"
+            - "4435"
+          ports:
+            - containerPort: 4435
+              protocol: TCP
+          volumeMounts:
+            - name: microservice-config-volume
+              mountPath: /config
+          env:
+            - name: MICROSERVICE_CONFIG_PATH
+              value: /config/microservice_config.yaml
+      volumes:
+        - name: microservice-config-volume
+          configMap:
+            name: microservice-app-config
+
+---
+
+# --- Service for Audio Microservice ---
+apiVersion: v1
+kind: Service
+metadata:
+  name: microservice-audio-service
+spec:
+  selector:
+    app: audio
+  ports:
+    - protocol: TCP
+      port: 4435
+      targetPort: 4435
+  type: ClusterIP
+
+---
+
+# --- Deployment for Chat Microservice ---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: microservice-chat-deployment
+  labels:
+    app: chat
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: chat
+  template:
+    metadata:
+      labels:
+        type: microservice
+        app: chat
+    spec:
+      containers:
+        - name: chat-server
+          image: sbnm007/microservice:0.0.6 # Ensure this is your rebuilt image
+          command: ["python"]
+          args:
+            - "microservice.py"
+            - "chat"
+            - "4436"
+          ports:
+            - containerPort: 4436
+              protocol: TCP
+          volumeMounts:
+            - name: microservice-config-volume
+              mountPath: /config
+          env:
+            - name: MICROSERVICE_CONFIG_PATH
+              value: /config/microservice_config.yaml
+      volumes:
+        - name: microservice-config-volume
+          configMap:
+            name: microservice-app-config
+
+---
+
+# --- Service for Chat Microservice ---
+apiVersion: v1
+kind: Service
+metadata:
+  name: microservice-chat-service
+spec:
+  selector:
+    app: chat
+  ports:
+    - protocol: TCP
+      port: 4436
+      targetPort: 4436
+  type: ClusterIP

@@ -1,0 +1,565 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WebTransport Streaming Platform</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+            background: #1a1a1a;
+            color: #fff;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+        }
+        .panel {
+            background: #2a2a2a;
+            padding: 20px;
+            border-radius: 10px;
+            border: 1px solid #444;
+        }
+        h1 {
+            text-align: center;
+            color: #00ff88;
+            margin-bottom: 30px;
+        }
+        h2 {
+            color: #00ff88;
+            margin-bottom: 15px;
+        }
+        video {
+            width: 100%;
+            max-width: 500px;
+            background: #000;
+            border-radius: 8px;
+            margin-bottom: 15px;
+        }
+        button {
+            padding: 10px 20px;
+            margin: 5px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: all 0.3s;
+        }
+        .btn-start {
+            background: #00ff88;
+            color: #000;
+        }
+        .btn-stop {
+            background: #ff4444;
+            color: #fff;
+        }
+        .btn-toggle {
+            background: #4488ff;
+            color: #fff;
+        }
+        button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+        .chat-container {
+            height: 300px;
+            display: flex;
+            flex-direction: column;
+        }
+        .chat-messages {
+            flex: 1;
+            background: #333;
+            padding: 10px;
+            border-radius: 5px;
+            overflow-y: auto;
+            margin-bottom: 10px;
+        }
+        .chat-input {
+            display: flex;
+            gap: 10px;
+        }
+        .chat-input input {
+            flex: 1;
+            padding: 10px;
+            border: 1px solid #555;
+            border-radius: 5px;
+            background: #444;
+            color: #fff;
+        }
+        .status {
+            background: #333;
+            padding: 15px;
+            border-radius: 5px;
+            margin-bottom: 20px;
+            text-align: center;
+            font-size: 18px;
+        }
+        .status.connected {
+            background: #004400;
+            color: #00ff88;
+        }
+        .metrics {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+        .metric {
+            background: #333;
+            padding: 10px;
+            border-radius: 5px;
+            text-align: center;
+        }
+        .metric-value {
+            font-size: 24px;
+            font-weight: bold;
+            color: #00ff88;
+        }
+    </style>
+</head>
+<body>
+    <h1>🚀 WebTransport Streaming Platform</h1>
+    
+    <div class="status" id="status">
+        Status: Not Connected
+    </div>
+    
+    <div class="metrics">
+        <div class="metric">
+            <div class="metric-value" id="videoFrames">0</div>
+            <div>Video Frames</div>
+        </div>
+        <div class="metric">
+            <div class="metric-value" id="audioPackets">0</div>
+            <div>Audio Packets</div>
+        </div>
+        <div class="metric">
+            <div class="metric-value" id="chatCount">0</div>
+            <div>Chat Messages</div>
+        </div>
+        <div class="metric">
+            <div class="metric-value" id="dataRate">0 KB/s</div>
+            <div>Data Rate</div>
+        </div>
+    </div>
+    
+    <div class="container">
+        <div class="panel">
+            <h2>📹 Video & Audio Stream</h2>
+            <video id="localVideo" autoplay muted></video>
+            <div>
+                <button id="startButton" class="btn-start">Start Streaming</button>
+                <button id="stopButton" class="btn-stop" disabled>Stop Streaming</button>
+                <button id="qualityButton" class="btn-toggle">Toggle Quality</button>
+            </div>
+        </div>
+        
+        <div class="panel">
+            <h2>💬 Live Chat</h2>
+            <div class="chat-container">
+                <div class="chat-messages" id="chatMessages"></div>
+                <div class="chat-input">
+                    <input type="text" id="chatInput" placeholder="Type message..." disabled>
+                    <button id="sendChat" class="btn-start" disabled>Send</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        class WebTransportStreamer {
+            constructor() {
+                this.transport = null;
+                this.mediaStream = null;
+                this.videoStream = null;
+                this.audioStream = null;
+                this.chatStream = null;
+                this.videoWriter = null;
+                this.audioWriter = null;
+                this.isStreaming = false;
+                this.isHighQuality = false;
+                
+                //Metrics
+                this.videoFrameCount = 0;
+                this.audioPacketCount = 0;
+                this.chatMessageCount = 0;
+                this.bytesTransferred = 0;
+                this.lastBytesCheck = Date.now();
+                
+                //Configuration
+                //this.serverUrl = 'https://quic-aioquic.com:4433/wt'; //Use this for development
+                this.serverUrl = 'https://quic-aioquic.com/wt';
+                this.encoder = new TextEncoder();
+                this.decoder = new TextDecoder();
+                
+                this.setupElements();
+                this.setupEventListeners();
+                this.startMetricsUpdater();
+            }
+            
+            setupElements() {
+                this.elements = {
+                    localVideo: document.getElementById('localVideo'),
+                    startButton: document.getElementById('startButton'),
+                    stopButton: document.getElementById('stopButton'),
+                    qualityButton: document.getElementById('qualityButton'),
+                    chatInput: document.getElementById('chatInput'),
+                    sendChat: document.getElementById('sendChat'),
+                    chatMessages: document.getElementById('chatMessages'),
+                    status: document.getElementById('status'),
+                    videoFrames: document.getElementById('videoFrames'),
+                    audioPackets: document.getElementById('audioPackets'),
+                    chatCount: document.getElementById('chatCount'),
+                    dataRate: document.getElementById('dataRate')
+                };
+            }
+            
+            setupEventListeners() {
+                this.elements.startButton.addEventListener('click', () => this.startStreaming());
+                this.elements.stopButton.addEventListener('click', () => this.stopStreaming());
+                this.elements.qualityButton.addEventListener('click', () => this.toggleQuality());
+                this.elements.sendChat.addEventListener('click', () => this.sendChatMessage());
+                this.elements.chatInput.addEventListener('keypress', (e) => {
+                    if (e.key === 'Enter') this.sendChatMessage();
+                });
+            }
+            
+            log(message, type = 'info') {
+                const timestamp = new Date().toLocaleTimeString();
+                console.log(`[${timestamp}] ${message}`);
+            }
+            
+            updateStatus(message, isConnected = false) {
+                this.elements.status.textContent = `Status: ${message}`;
+                this.elements.status.className = isConnected ? 'status connected' : 'status';
+            }
+            
+            buildPacket(trackId, trackType, payload) {
+                //Create 32-byte header
+                const header = new ArrayBuffer(32);
+                const view = new DataView(header);
+                
+                //track_id (16 bytes)
+                const trackIdBytes = this.encoder.encode(trackId.substring(0, 16));
+                const trackIdPadded = new Uint8Array(16);
+                trackIdPadded.set(trackIdBytes);
+                
+                //payload_length (4 bytes, big endian)
+                view.setUint32(16, payload.length, false);
+                
+                //track_type (12 bytes)
+                const trackTypeBytes = this.encoder.encode(trackType.substring(0, 12));
+                const trackTypePadded = new Uint8Array(12);
+                trackTypePadded.set(trackTypeBytes);
+                
+                //Assemble header
+                new Uint8Array(header, 0, 16).set(trackIdPadded);
+                new Uint8Array(header, 20, 12).set(trackTypePadded);
+                
+                //Combine header + payload
+                const packet = new Uint8Array(header.byteLength + payload.length);
+                packet.set(new Uint8Array(header), 0);
+                packet.set(payload, header.byteLength);
+                
+                this.bytesTransferred += packet.length;
+                return packet;
+            }
+            
+            async startStreaming() {
+                try {
+                    this.updateStatus('Connecting...', false);
+                    this.log('Starting WebTransport connection', 'info');
+                    
+                    //Create WebTransport connection
+                    this.transport = new WebTransport(this.serverUrl);
+                    
+                    this.transport.onstatechange = () => {
+                        this.log(`Transport state: ${this.transport.state}`, 'info');
+                        if (this.transport.state === 'closed') {
+                            this.stopStreaming();
+                        }
+                    };
+                    
+                    this.transport.onerror = (event) => {
+                        this.log(`Transport error: ${event.message}`, 'error');
+                        this.stopStreaming();
+                    };
+                    
+                    await this.transport.ready;
+                    this.log('WebTransport connected successfully', 'success');
+                    
+                    //Get media permissions
+                    this.log('Requesting media access', 'info');
+                    const constraints = {
+                        video: {
+                            width: this.isHighQuality ? 1280 : 640,
+                            height: this.isHighQuality ? 720 : 480,
+                            frameRate: this.isHighQuality ? 30 : 15
+                        },
+                        audio: {
+                            echoCancellation: true,
+                            noiseSuppression: true
+                        }
+                    };
+                    
+                    this.mediaStream = await navigator.mediaDevices.getUserMedia(constraints);
+                    this.elements.localVideo.srcObject = this.mediaStream;
+                    
+                    //Wait for video ready
+                    await new Promise((resolve) => {
+                        if (this.elements.localVideo.readyState >= 2) {
+                            resolve();
+                        } else {
+                            this.elements.localVideo.addEventListener('loadeddata', resolve, { once: true });
+                        }
+                    });
+                    
+                    this.log('Media stream ready', 'success');
+                    
+                    //Create streams
+                    this.videoStream = await this.transport.createUnidirectionalStream();
+                    this.audioStream = await this.transport.createUnidirectionalStream();
+                    this.chatStream = await this.transport.createUnidirectionalStream();
+                    
+                    this.log('Created multiplexed streams', 'success');
+                    
+                    //Send test packets
+                    await this.sendTestPackets();
+                    
+                    //Start streaming
+                    this.isStreaming = true;
+                    this.startVideoCapture();
+                    this.startAudioCapture();
+                    
+                    //Update UI
+                    this.updateStatus('Connected & Streaming', true);
+                    this.elements.startButton.disabled = true;
+                    this.elements.stopButton.disabled = false;
+                    this.elements.sendChat.disabled = false;
+                    this.elements.chatInput.disabled = false;
+                    
+                    this.log('Streaming started', 'success');
+                    
+                } catch (error) {
+                    this.log(`Failed to start: ${error.message}`, 'error');
+                    this.stopStreaming();
+                }
+            }
+            
+            async sendTestPackets() {
+                //Test video stream
+                const testVideoPacket = this.buildPacket('test_video', 'video', new Uint8Array([1, 2, 3, 4]));
+                const videoWriter = this.videoStream.getWriter();
+                await videoWriter.write(testVideoPacket);
+                videoWriter.releaseLock();
+                
+                //Test audio stream
+                const testAudioPacket = this.buildPacket('test_audio', 'audio', new Uint8Array([5, 6, 7, 8]));
+                const audioWriter = this.audioStream.getWriter();
+                await audioWriter.write(testAudioPacket);
+                audioWriter.releaseLock();
+                
+                //Test chat stream
+                const testChatData = { message: 'test connection', user: 'system', timestamp: Date.now() };
+                const testChatPacket = this.buildPacket('test_chat', 'chat', this.encoder.encode(JSON.stringify(testChatData)));
+                const chatWriter = this.chatStream.getWriter();
+                await chatWriter.write(testChatPacket);
+                chatWriter.releaseLock();
+                
+                //Create fresh streams for continuous use
+                this.videoStream = await this.transport.createUnidirectionalStream();
+                this.audioStream = await this.transport.createUnidirectionalStream();
+                
+                this.log('Test packets sent', 'success');
+            }
+            
+            async startVideoCapture() {
+                const canvas = document.createElement('canvas');
+                const ctx = canvas.getContext('2d');
+                canvas.width = this.isHighQuality ? 1280 : 640;
+                canvas.height = this.isHighQuality ? 720 : 480;
+                
+                this.videoWriter = this.videoStream.getWriter();
+                
+                const captureLoop = async () => {
+                    if (!this.isStreaming || !this.videoWriter) return;
+                    
+                    try {
+                        if (this.elements.localVideo.readyState >= 2) {
+                            //Capture frame
+                            ctx.drawImage(this.elements.localVideo, 0, 0, canvas.width, canvas.height);
+                            
+                            //Convert to JPEG
+                            const quality = this.isHighQuality ? 0.9 : 0.7;
+                            const imageData = canvas.toDataURL('image/jpeg', quality);
+                            const base64Data = imageData.split(',')[1];
+                            const binaryString = atob(base64Data);
+                            const payload = new Uint8Array(binaryString.length);
+                            
+                            for (let i = 0; i < binaryString.length; i++) {
+                                payload[i] = binaryString.charCodeAt(i);
+                            }
+                            
+                            //Send packet
+                            const packet = this.buildPacket('live_video', 'video', payload);
+                            await this.videoWriter.write(packet);
+                            this.videoFrameCount++;
+                        }
+                    } catch (error) {
+                        this.log(`Video error: ${error.message}`, 'error');
+                    }
+                    
+                    //Schedule next frame
+                    if (this.isStreaming) {
+                        const fps = this.isHighQuality ? 30 : 15;
+                        setTimeout(captureLoop, 1000 / fps);
+                    }
+                };
+                
+                captureLoop();
+            }
+            
+            async startAudioCapture() {
+                const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                await audioContext.resume();
+                
+                const source = audioContext.createMediaStreamSource(this.mediaStream);
+                const processor = audioContext.createScriptProcessor(4096, 1, 1);
+                
+                this.audioWriter = this.audioStream.getWriter();
+                
+                processor.onaudioprocess = async (event) => {
+                    if (!this.isStreaming || !this.audioWriter) return;
+                    
+                    try {
+                        const inputBuffer = event.inputBuffer;
+                        const inputData = inputBuffer.getChannelData(0);
+                        
+                        //Convert to PCM 16-bit
+                        const pcmData = new Int16Array(inputData.length);
+                        for (let i = 0; i < inputData.length; i++) {
+                            pcmData[i] = Math.max(-32768, Math.min(32767, inputData[i] * 32768));
+                        }
+                        
+                        const payload = new Uint8Array(pcmData.buffer);
+                        const packet = this.buildPacket('live_audio', 'audio', payload);
+                        
+                        await this.audioWriter.write(packet);
+                        this.audioPacketCount++;
+                        
+                    } catch (error) {
+                        this.log(`Audio error: ${error.message}`, 'error');
+                    }
+                };
+                
+                source.connect(processor);
+                processor.connect(audioContext.destination);
+            }
+            
+            async sendChatMessage() {
+                const message = this.elements.chatInput.value.trim();
+                if (!message || !this.transport || !this.chatStream) return;
+                
+                try {
+                    const chatData = {
+                        message_id: Date.now(),
+                        timestamp: Date.now(),
+                        user: 'streamer',
+                        message: message,
+                        type: 'text'
+                    };
+                    
+                    const payload = this.encoder.encode(JSON.stringify(chatData));
+                    const packet = this.buildPacket('live_chat', 'chat', payload);
+                    
+                    const writer = this.chatStream.getWriter();
+                    await writer.write(packet);
+                    writer.releaseLock();
+                    
+                    //Add to local chat display
+                    const msgDiv = document.createElement('div');
+                    msgDiv.style.marginBottom = '5px';
+                    msgDiv.style.padding = '5px';
+                    msgDiv.style.background = '#444';
+                    msgDiv.style.borderRadius = '3px';
+                    msgDiv.innerHTML = `<strong>You:</strong> ${message}`;
+                    this.elements.chatMessages.appendChild(msgDiv);
+                    this.elements.chatMessages.scrollTop = this.elements.chatMessages.scrollHeight;
+                    
+                    this.elements.chatInput.value = '';
+                    this.chatMessageCount++;
+                    
+                    this.log(`Chat sent: ${message}`, 'success');
+                    
+                } catch (error) {
+                    this.log(`Chat error: ${error.message}`, 'error');
+                }
+            }
+            
+            toggleQuality() {
+                this.isHighQuality = !this.isHighQuality;
+                this.elements.qualityButton.textContent = this.isHighQuality ? 'High Quality' : 'Standard Quality';
+                this.log(`Quality: ${this.isHighQuality ? 'High' : 'Standard'}`, 'info');
+            }
+            
+            async stopStreaming() {
+                this.isStreaming = false;
+                
+                if (this.mediaStream) {
+                    this.mediaStream.getTracks().forEach(track => track.stop());
+                    this.elements.localVideo.srcObject = null;
+                }
+                
+                if (this.videoWriter) {
+                    try { await this.videoWriter.close(); } catch (e) {}
+                    this.videoWriter = null;
+                }
+                
+                if (this.audioWriter) {
+                    try { await this.audioWriter.close(); } catch (e) {}
+                    this.audioWriter = null;
+                }
+                
+                if (this.transport) {
+                    try { await this.transport.close(); } catch (e) {}
+                    this.transport = null;
+                }
+                
+                //Reset UI
+                this.updateStatus('Disconnected', false);
+                this.elements.startButton.disabled = false;
+                this.elements.stopButton.disabled = true;
+                this.elements.sendChat.disabled = true;
+                this.elements.chatInput.disabled = true;
+                
+                this.log('Streaming stopped', 'info');
+            }
+            
+            startMetricsUpdater() {
+                setInterval(() => {
+                    this.elements.videoFrames.textContent = this.videoFrameCount;
+                    this.elements.audioPackets.textContent = this.audioPacketCount;
+                    this.elements.chatCount.textContent = this.chatMessageCount;
+                    
+                    //Calculate data rate
+                    const now = Date.now();
+                    const timeDiff = (now - this.lastBytesCheck) / 1000;
+                    const dataRate = (this.bytesTransferred / timeDiff / 1024).toFixed(1);
+                    this.elements.dataRate.textContent = `${dataRate} KB/s`;
+                    
+                    this.bytesTransferred = 0;
+                    this.lastBytesCheck = now;
+                }, 1000);
+            }
+        }
+        
+        //Initialize the streamer
+        const streamer = new WebTransportStreamer();
+        streamer.log('WebTransport Streaming Platform initialized', 'success');
+    </script>
+</body>
+</html>

@@ -1,0 +1,18 @@
+# Microservice configuration for local development
+# This file configures how microservices connect to Pulsar
+
+# Pulsar broker configuration for local development
+# If you're running Pulsar locally, use localhost:6650
+# If you're using Docker Compose, use the service name defined in docker-compose.yml
+pulsar_broker_url: "pulsar://localhost:6650"
+
+# Enable/disable sending data to Pulsar
+# Set to true when you have Pulsar running
+# Set to false for testing without Pulsar
+send_to_pulsar: false
+
+# Additional configuration options can be added here
+# For example:
+# pulsar_topic_prefix: "local-dev"
+# max_retries: 3
+# timeout_seconds: 30
